@@ -2,6 +2,7 @@ package com.example.spade_demo_in_java;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.documentfile.provider.DocumentFile;
 
 import android.app.Activity;
 import android.content.ContentResolver;
@@ -48,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
     final int REQUEST_SAF = 1337;
     private Uri tempURI;
     @NotNull
-    private String filename, filepath;
+    private String filename, filepath, fileExtension;
     @NotNull
     private byte[] iv;
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
@@ -157,18 +158,24 @@ public class MainActivity extends AppCompatActivity {
             Uri uri = data != null ? data.getData() : null;
             this.tempURI = uri;
             filepath = tempURI.getPath();
-            filename = filepath.substring(filepath.lastIndexOf("/")+1);
             ContentResolver cr = getApplicationContext().getContentResolver();
+            // THIS WILL BE USEFUL LATER WHEN WE TEST OTHER TYPES OF FILE
+            // THEN WE CAN CHECK THE MIME TYPE TO SPECIFY THE SPINNER IN openDirectory()
             String mimeType = cr.getType(tempURI);
+            DocumentFile documentFile = DocumentFile.fromSingleUri(this, tempURI);
+            String fileNameWithExtension = documentFile.getName();
+            int index = fileNameWithExtension.lastIndexOf(".");
+            this.filename = fileNameWithExtension.substring(0,index);
+            this.fileExtension = fileNameWithExtension.substring(index+1);
             TextView pathTextView = (TextView) findViewById(R.id.pathTextView);
-            pathTextView.setText(filepath);
+            pathTextView.setText(fileNameWithExtension);
         }
 
         super.onActivityResult(requestCode, resultCode, data);
     }
     
     private void execute() throws IOException, NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException {
-        File copiedFile = new File(getExternalFilesDir(null), filename + "copied");
+        File copiedFile = new File(getExternalFilesDir(null), filename + "_copied" + "." + fileExtension);
         InputStream inputStream = getContentResolver().openInputStream(tempURI);
         copyStreamToFile(inputStream, copiedFile);
         // debugging variables
@@ -210,7 +217,7 @@ public class MainActivity extends AppCompatActivity {
 
     private final void encrypt(File copiedFile) throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
         ActivityCompat.requestPermissions((Activity)this, new String[]{"android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"}, 200);
-        File path = new File(this.getExternalFilesDir((String)null), this.filename + "encrypted");
+        File path = new File(this.getExternalFilesDir((String)null), this.filename + "_encrypted"+ "." + fileExtension);
         FileInputStream fis = new FileInputStream(copiedFile);
         FileOutputStream fos = new FileOutputStream(path, false);
         this.generator.init(128);
@@ -233,9 +240,9 @@ public class MainActivity extends AppCompatActivity {
 
     // Need to be written all over again similar to encrypt, but now decrypting. use the same key and iv.
     private final void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
-        File path = new File(this.getExternalFilesDir(null), this.filename + "encrypted");
+        File path = new File(this.getExternalFilesDir(null), this.filename + "_encrypted"+ "." + fileExtension);
         FileInputStream fis = new FileInputStream(path);
-        File path1 = new File(this.getExternalFilesDir(null), this.filename + "decrypted");
+        File path1 = new File(this.getExternalFilesDir(null), this.filename + "_decrypted"+ "." + fileExtension);
         FileOutputStream fos = new FileOutputStream(path1, false);
         IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
         cipher.init(Cipher.DECRYPT_MODE, (Key) this.secretKey, ivParameterSpec);

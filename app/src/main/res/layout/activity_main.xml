@@ -75,7 +75,7 @@
         app:layout_constraintBottom_toTopOf="@+id/data_type_spinner"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        android:text="File path will be displayed here"
+        android:text="File name will be displayed here"
         app:layout_constraintTop_toBottomOf="@+id/textView" />
 
     <Button
