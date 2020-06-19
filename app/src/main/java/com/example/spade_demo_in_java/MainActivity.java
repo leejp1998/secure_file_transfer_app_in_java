@@ -158,15 +158,18 @@ public class MainActivity extends AppCompatActivity {
             Uri uri = data != null ? data.getData() : null;
             this.tempURI = uri;
             filepath = tempURI.getPath();
+
             ContentResolver cr = getApplicationContext().getContentResolver();
             // THIS WILL BE USEFUL LATER WHEN WE TEST OTHER TYPES OF FILE
             // THEN WE CAN CHECK THE MIME TYPE TO SPECIFY THE SPINNER IN openDirectory()
             String mimeType = cr.getType(tempURI);
+
             DocumentFile documentFile = DocumentFile.fromSingleUri(this, tempURI);
             String fileNameWithExtension = documentFile.getName();
             int index = fileNameWithExtension.lastIndexOf(".");
             this.filename = fileNameWithExtension.substring(0,index);
             this.fileExtension = fileNameWithExtension.substring(index+1);
+
             TextView pathTextView = (TextView) findViewById(R.id.pathTextView);
             pathTextView.setText(fileNameWithExtension);
         }
@@ -183,6 +186,7 @@ public class MainActivity extends AppCompatActivity {
         Boolean readablecheck = copiedFile.canRead();*/
         
         encrypt(copiedFile);
+        copiedFile.delete(); // For security, copied file is deleted. Not sure if this is secure enough.
     }
 
 
