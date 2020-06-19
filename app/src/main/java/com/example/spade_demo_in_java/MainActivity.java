@@ -4,6 +4,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
 import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -26,6 +27,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.NoSuchAlgorithmException;
@@ -48,7 +50,6 @@ public class MainActivity extends AppCompatActivity {
     @NotNull
     private String filename, filepath;
     @NotNull
-    private File file;
     private byte[] iv;
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
@@ -105,6 +106,8 @@ public class MainActivity extends AppCompatActivity {
                     e.printStackTrace();
                 } catch (InvalidKeyException e) {
                     e.printStackTrace();
+                } catch (InvalidAlgorithmParameterException e){
+                    e.printStackTrace();
                 }
             }
         }));
@@ -118,6 +121,7 @@ public class MainActivity extends AppCompatActivity {
     private void openDirectory(){
         Spinner dataTypeDropdown = (Spinner) findViewById(R.id.data_type_spinner);
         Intent intent;
+        // MIME TYPE: pdf = application/pdf || mp3 = audio/mpeg
         switch(dataTypeDropdown.getSelectedItemPosition()){
             case 0:
                 intent = (new Intent("android.intent.action.OPEN_DOCUMENT"))
@@ -126,7 +130,7 @@ public class MainActivity extends AppCompatActivity {
                 break;
             case 1:
                 intent = (new Intent("android.intent.action.OPEN_DOCUMENT"))
-                        .setType("audio/mp3")
+                        .setType("audio/mpeg")
                         .addCategory("android.intent.category.OPENABLE");
                 break;
             case 2:
@@ -154,6 +158,8 @@ public class MainActivity extends AppCompatActivity {
             this.tempURI = uri;
             filepath = tempURI.getPath();
             filename = filepath.substring(filepath.lastIndexOf("/")+1);
+            ContentResolver cr = getApplicationContext().getContentResolver();
+            String mimeType = cr.getType(tempURI);
             TextView pathTextView = (TextView) findViewById(R.id.pathTextView);
             pathTextView.setText(filepath);
         }
@@ -166,8 +172,8 @@ public class MainActivity extends AppCompatActivity {
         InputStream inputStream = getContentResolver().openInputStream(tempURI);
         copyStreamToFile(inputStream, copiedFile);
         // debugging variables
-        Boolean existcheck = copiedFile.exists();
-        Boolean readablecheck = copiedFile.canRead();
+        /*Boolean existcheck = copiedFile.exists();
+        Boolean readablecheck = copiedFile.canRead();*/
         
         encrypt(copiedFile);
     }
@@ -226,12 +232,13 @@ public class MainActivity extends AppCompatActivity {
 
 
     // Need to be written all over again similar to encrypt, but now decrypting. use the same key and iv.
-    private final void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+    private final void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
         File path = new File(this.getExternalFilesDir(null), this.filename + "encrypted");
         FileInputStream fis = new FileInputStream(path);
         File path1 = new File(this.getExternalFilesDir(null), this.filename + "decrypted");
         FileOutputStream fos = new FileOutputStream(path1, false);
-        cipher.init(Cipher.DECRYPT_MODE, (Key) this.secretKey);
+        IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
+        cipher.init(Cipher.DECRYPT_MODE, (Key) this.secretKey, ivParameterSpec);
         CipherInputStream cis = new CipherInputStream(fis, cipher);
         int bytesRead = 0;
         byte[] plainText = new byte[4096];
