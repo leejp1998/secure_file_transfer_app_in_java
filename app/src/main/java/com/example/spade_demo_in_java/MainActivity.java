@@ -3,13 +3,17 @@ package com.example.spade_demo_in_java;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.documentfile.provider.DocumentFile;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
 
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -20,13 +24,27 @@ import android.widget.TextView;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.BufferedWriter;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutput;
+import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import java.io.Writer;
+import java.net.Socket;
 import java.net.URI;
+import java.net.UnknownHostException;
+import java.nio.Buffer;
 import java.nio.charset.Charset;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
@@ -55,6 +73,8 @@ public class MainActivity extends AppCompatActivity {
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+    String ipAddress = "172.30.0.14"; // windows IP4 address: 192.168.1.103, linux inet address 127.0.0.1? <-- should work for the same device server/client 10.0.2.15
+    int port = 6000;
 
     public MainActivity() throws NoSuchAlgorithmException, NoSuchPaddingException {
     }
@@ -69,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
         Button executeButton = (Button)findViewById(R.id.execute_button);
         Spinner dataTypeDropdown = (Spinner)findViewById(R.id.data_type_spinner);
         Button decryptButton = (Button)findViewById(R.id.decrypt_button);
+        Button sendButton = (Button) findViewById(R.id.send_button);
         ArrayAdapter arrayAdapter = ArrayAdapter.createFromResource((Context)this, R.array.data_types, android.R.layout.simple_spinner_item);
         arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         dataTypeDropdown.setAdapter((SpinnerAdapter)arrayAdapter);
@@ -108,6 +129,16 @@ public class MainActivity extends AppCompatActivity {
                 } catch (InvalidKeyException e) {
                     e.printStackTrace();
                 } catch (InvalidAlgorithmParameterException e){
+                    e.printStackTrace();
+                }
+            }
+        }));
+
+        sendButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
+            public final void onClick(View it) {
+                try {
+                    MainActivity.this.send();
+                } catch (FileNotFoundException e) {
                     e.printStackTrace();
                 }
             }
@@ -231,14 +262,37 @@ public class MainActivity extends AppCompatActivity {
         int bytesRead = 0;
         byte[] plainText = new byte[4096];
 
+        int size =0, bytes =0;
         while((bytesRead = fis.read(plainText)) >= 0) {
             output.write(plainText, 0, bytesRead);
+            bytes = bytesRead;
+            size += bytes;
         }
+        System.out.println("fis size: " + fis.available());
+        System.out.println("File total size: " + Integer.toString(size));
+        System.out.println("File read bytes: " + Integer.toString(bytes));
+
+
         output.flush();
         output.close();
         fos.close();
         fis.close();
         this.iv = cipher.getIV();
+
+        //SAVING THE KEY
+        File ivpath = new File(this.getExternalFilesDir(null), this.filename + "_iv.key");
+        FileOutputStream ivfos = new FileOutputStream(ivpath);
+        ObjectOutputStream ivoos = new ObjectOutputStream(ivfos);
+        ivoos.writeObject(iv);
+        File keypath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
+        FileOutputStream keyfos = new FileOutputStream(keypath);
+        ObjectOutputStream keyoos = new ObjectOutputStream(keyfos);
+        byte[] keyb = secretKey.getEncoded();
+        keyoos.writeObject(secretKey);
+        ivfos.flush();
+        ivfos.close();
+        keyoos.flush();
+        keyoos.close();
     }
 
 
@@ -260,6 +314,94 @@ public class MainActivity extends AppCompatActivity {
         fos.flush();
         fos.close();
         cis.close();
+    }
+
+    private final void send() throws FileNotFoundException {
+        File path = new File(this.getExternalFilesDir(null), this.filename + "_encrypted"+ "." + fileExtension);
+        FileInputStream fis = new FileInputStream(path);
+        File ivPath = new File(this.getExternalFilesDir(null), this.filename + "_iv.key");
+        FileInputStream ivFis = new FileInputStream(ivPath);
+        File keyPath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
+        FileInputStream keyFis = new FileInputStream(keyPath);
+
+        BackgroundTask b1 = new BackgroundTask();
+        b1.execute(path, ivPath, keyPath);
+        //b1.execute(fis, ivFis, keyFis);
+    }
+
+    class BackgroundTask extends AsyncTask<File,Void,Void>{
+        Socket s, s1, s2;
+        DataOutputStream out;
+        ObjectOutputStream out1, out2;
+
+        @Override
+        protected Void doInBackground(File... f) {
+            try{
+                s = new Socket(ipAddress,port);
+                s1 = new Socket(ipAddress,port+1);
+                s2 = new Socket(ipAddress,port+2);
+                out = new DataOutputStream(s.getOutputStream());
+                out1 = new ObjectOutputStream(s1.getOutputStream());
+                out2 = new ObjectOutputStream(s2.getOutputStream());
+
+                // make out same as encrypted file which is the argument FileInputStream
+                // Currently Not sending the full file.. WHY?
+                int bytesRead = 0;
+                byte[] plainText = new byte[4096];
+                FileInputStream fis1 = new FileInputStream(f[0]);
+                //FileInputStream fis1 = fis[0];
+                fis1.read(plainText, 0, plainText.length);
+
+                int size = 0, bytes = 0;
+                while((bytesRead = fis1.read(plainText)) >= 0){
+                    out.write(plainText, 0, bytesRead);
+                    bytes = bytesRead;
+                    size += bytesRead;
+                }
+                System.out.println("fis1 size: " +fis1.available());
+                System.out.println("File total size: " + Integer.toString(size));
+                System.out.println("File read bytes: " + Integer.toString(bytes));
+                out.flush();
+                out.close();
+                s.close();
+
+                int bytesRead1 = 0;
+                byte[] plainText1 = new byte[4096];
+                ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
+                //FileInputStream fis2 = fis[1];
+                fis2.read(plainText1, 0, plainText1.length);
+
+                int size1 = 0, bytes1 = 0;
+                while((bytesRead1 = fis2.read(plainText1)) >= 0){
+                    out1.write(plainText1, 0, bytesRead1);
+                    bytes1 = bytesRead;
+                    size1 += bytesRead;
+                }
+                System.out.println("IV total size: " + Integer.toString(size1));
+                System.out.println("IV read bytes: " + Integer.toString(bytes1));
+                out1.flush();
+                out1.close();
+                s1.close();
+
+                int bytesRead2 = 0;
+                byte[] plainText2 = new byte[4096];
+                ObjectInputStream fis3 = new ObjectInputStream(new FileInputStream(f[2]));
+                //FileInputStream fis3 = fis[2];
+                fis3.read(plainText2, 0, plainText2.length);
+
+                while((bytesRead2 = fis1.read(plainText2)) >= 0){
+                    out2.write(plainText2, 0, bytesRead2);
+                }
+                out2.flush();
+                out2.close();
+                s2.close();
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
     }
 
 }
