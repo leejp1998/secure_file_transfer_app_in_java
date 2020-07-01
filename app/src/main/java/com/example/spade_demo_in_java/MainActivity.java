@@ -34,6 +34,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ObjectInput;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
@@ -73,7 +74,8 @@ public class MainActivity extends AppCompatActivity {
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "172.30.0.14"; // windows IP4 address: 192.168.1.103, linux inet address 127.0.0.1? <-- should work for the same device server/client 10.0.2.15
+    String ipAddress = "192.168.1.103"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103
+    // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
     int port = 6000;
 
     public MainActivity() throws NoSuchAlgorithmException, NoSuchPaddingException {
@@ -260,19 +262,13 @@ public class MainActivity extends AppCompatActivity {
         cipher.init(Cipher.ENCRYPT_MODE, (Key) this.secretKey);
         CipherOutputStream output = new CipherOutputStream((FileOutputStream)fos, this.cipher);
         int bytesRead = 0;
-        byte[] plainText = new byte[4096];
+        byte[] plainText = new byte[8192];
 
-        int size =0, bytes =0;
         while((bytesRead = fis.read(plainText)) >= 0) {
             output.write(plainText, 0, bytesRead);
-            bytes = bytesRead;
-            size += bytes;
+            System.out.println(bytesRead + " is read");
         }
-        System.out.println("fis size: " + fis.available());
-        System.out.println("File total size: " + Integer.toString(size));
-        System.out.println("File read bytes: " + Integer.toString(bytes));
-
-
+        System.out.println(path.length());
         output.flush();
         output.close();
         fos.close();
@@ -347,7 +343,7 @@ public class MainActivity extends AppCompatActivity {
                 // make out same as encrypted file which is the argument FileInputStream
                 // Currently Not sending the full file.. WHY?
                 int bytesRead = 0;
-                byte[] plainText = new byte[4096];
+                byte[] plainText = new byte[8192];
                 FileInputStream fis1 = new FileInputStream(f[0]);
                 //FileInputStream fis1 = fis[0];
                 fis1.read(plainText, 0, plainText.length);
@@ -355,12 +351,10 @@ public class MainActivity extends AppCompatActivity {
                 int size = 0, bytes = 0;
                 while((bytesRead = fis1.read(plainText)) >= 0){
                     out.write(plainText, 0, bytesRead);
-                    bytes = bytesRead;
-                    size += bytesRead;
+                    System.out.println(bytesRead + " is read");
                 }
-                System.out.println("fis1 size: " +fis1.available());
-                System.out.println("File total size: " + Integer.toString(size));
-                System.out.println("File read bytes: " + Integer.toString(bytes));
+                System.out.println(f[0].length());
+                fis1.close();
                 out.flush();
                 out.close();
                 s.close();
@@ -371,14 +365,15 @@ public class MainActivity extends AppCompatActivity {
                 //FileInputStream fis2 = fis[1];
                 fis2.read(plainText1, 0, plainText1.length);
 
-                int size1 = 0, bytes1 = 0;
+                /*int size1 = 0, bytes1 = 0;
                 while((bytesRead1 = fis2.read(plainText1)) >= 0){
                     out1.write(plainText1, 0, bytesRead1);
                     bytes1 = bytesRead;
                     size1 += bytesRead;
                 }
                 System.out.println("IV total size: " + Integer.toString(size1));
-                System.out.println("IV read bytes: " + Integer.toString(bytes1));
+                System.out.println("IV read bytes: " + Integer.toString(bytes1));*/
+                out1.writeObject(fis2.readObject());
                 out1.flush();
                 out1.close();
                 s1.close();
@@ -389,15 +384,18 @@ public class MainActivity extends AppCompatActivity {
                 //FileInputStream fis3 = fis[2];
                 fis3.read(plainText2, 0, plainText2.length);
 
-                while((bytesRead2 = fis1.read(plainText2)) >= 0){
+                /*while((bytesRead2 = fis1.read(plainText2)) >= 0){
                     out2.write(plainText2, 0, bytesRead2);
-                }
+                }*/
+                out2.writeObject(fis3.readObject());
                 out2.flush();
                 out2.close();
                 s2.close();
             } catch (UnknownHostException e) {
                 e.printStackTrace();
             } catch (IOException e) {
+                e.printStackTrace();
+            } catch (ClassNotFoundException e) {
                 e.printStackTrace();
             }
             return null;
