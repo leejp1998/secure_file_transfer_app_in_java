@@ -20,6 +20,7 @@ import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.SpinnerAdapter;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -74,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "192.168.1.103"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
+    String ipAddress = "127.0.0.1"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
     // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
     int port = 6000;
 
@@ -211,15 +212,22 @@ public class MainActivity extends AppCompatActivity {
     }
     
     private void execute() throws IOException, NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException {
-        File copiedFile = new File(getExternalFilesDir(null), filename + "_copied" + "." + fileExtension);
-        InputStream inputStream = getContentResolver().openInputStream(tempURI);
-        copyStreamToFile(inputStream, copiedFile);
-        // debugging variables
+        if(tempURI == null){
+            Toast toast = Toast.makeText(getApplicationContext(), "No file is selected", Toast.LENGTH_SHORT);
+            //toast.setMargin(50,50);
+            toast.show();
+        }
+        else {
+            File copiedFile = new File(getExternalFilesDir(null), filename + "_copied" + "." + fileExtension);
+            InputStream inputStream = getContentResolver().openInputStream(tempURI);
+            copyStreamToFile(inputStream, copiedFile);
+            // debugging variables
         /*Boolean existcheck = copiedFile.exists();
         Boolean readablecheck = copiedFile.canRead();*/
-        
-        encrypt(copiedFile);
-        copiedFile.delete(); // For security, copied file is deleted. Not sure if this is secure enough.
+
+            encrypt(copiedFile);
+            copiedFile.delete(); // For security, copied file is deleted. Not sure if this is secure enough.
+        }
     }
 
 
@@ -318,15 +326,10 @@ public class MainActivity extends AppCompatActivity {
 
     private final void send() throws FileNotFoundException {
         File path = new File(this.getExternalFilesDir(null), this.filename + "_encrypted"+ "." + fileExtension);
-        FileInputStream fis = new FileInputStream(path);
         File ivPath = new File(this.getExternalFilesDir(null), this.filename + "_iv.key");
-        FileInputStream ivFis = new FileInputStream(ivPath);
         File keyPath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
-        FileInputStream keyFis = new FileInputStream(keyPath);
-
         BackgroundTask b1 = new BackgroundTask();
         b1.execute(path, ivPath, keyPath);
-        //b1.execute(fis, ivFis, keyFis);
     }
 
     class BackgroundTask extends AsyncTask<File,Void,Void>{
@@ -351,7 +354,7 @@ public class MainActivity extends AppCompatActivity {
                 out1 = new DataOutputStream(s1.getOutputStream());
 //                out2 = new DataOutputStream(s2.getOutputStream());
 
-
+                // THIS WRITES THE ENCRYPTED FILE AND SEND IT OUT TO SOCKET
                 FileInputStream fis1 = new FileInputStream(f[0]);
                 final byte[] bytearray = new byte[(int) f[0].length()];
                 BufferedInputStream bis = new BufferedInputStream(fis1);
@@ -362,6 +365,18 @@ public class MainActivity extends AppCompatActivity {
                 out.close();
                 s.close();
 
+                // THIS WRITES IV AS BYTE ARRAY
+                out1.writeInt(iv.length);
+                out1.write(iv);
+                out1.flush();
+                out1.close();
+                s1.close();
+
+                // THIS WRITES KEY AS AN OBJECT
+                out2.writeObject(secretKey);
+                out2.close();
+                s2.close();
+
                 /*ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
                 final byte[] bytearray1 = new byte[(int) f[1].length()];
                 BufferedInputStream bis1 = new BufferedInputStream(fis2);
@@ -371,18 +386,6 @@ public class MainActivity extends AppCompatActivity {
                 out1.flush();
                 out1.close();
                 s1.close();*/
-
-               // THIS WRITES IV
-                out1.writeInt(iv.length);
-                out1.write(iv);
-                out1.flush();
-                out1.close();
-                s1.close();
-
-                // THIS WRITES KEY?
-                out2.writeObject(secretKey);
-                out2.close();
-                s2.close();
 
                 /*ObjectInputStream fis3 = new ObjectInputStream(new FileInputStream(f[2]));
                 final byte[] bytearray2 = new byte[(int) f[2].length()];
