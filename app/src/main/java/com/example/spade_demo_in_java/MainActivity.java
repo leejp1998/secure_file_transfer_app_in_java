@@ -74,7 +74,7 @@ public class MainActivity extends AppCompatActivity {
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "192.168.1.103"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103
+    String ipAddress = "192.168.1.103"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
     // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
     int port = 6000;
 
@@ -283,12 +283,16 @@ public class MainActivity extends AppCompatActivity {
         File keypath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
         FileOutputStream keyfos = new FileOutputStream(keypath);
         ObjectOutputStream keyoos = new ObjectOutputStream(keyfos);
-        byte[] keyb = secretKey.getEncoded();
+//        byte[] keyb = secretKey.getEncoded();
         keyoos.writeObject(secretKey);
         ivfos.flush();
         ivfos.close();
         keyoos.flush();
         keyoos.close();
+
+        for(int j=0; j<iv.length; j++){
+            System.out.println(iv[j]);
+        }
     }
 
 
@@ -327,8 +331,11 @@ public class MainActivity extends AppCompatActivity {
 
     class BackgroundTask extends AsyncTask<File,Void,Void>{
         Socket s, s1, s2;
-        DataOutputStream out;
-        ObjectOutputStream out1, out2;
+        ObjectOutputStream out;
+//       ObjectOutputStream out1, out2;
+//        BufferedOutputStream out1, out2;
+        ObjectOutputStream out2;
+        DataOutputStream out1;
 
         @Override
         protected Void doInBackground(File... f) {
@@ -336,34 +343,56 @@ public class MainActivity extends AppCompatActivity {
                 s = new Socket(ipAddress,port);
                 s1 = new Socket(ipAddress,port+1);
                 s2 = new Socket(ipAddress,port+2);
-                out = new DataOutputStream(s.getOutputStream());
-                out1 = new ObjectOutputStream(s1.getOutputStream());
+                out = new ObjectOutputStream(s.getOutputStream());
+//                out1 = new ObjectOutputStream(s1.getOutputStream());
                 out2 = new ObjectOutputStream(s2.getOutputStream());
+//                out1 = new BufferedOutputStream(s1.getOutputStream());
+//                out2 = new BufferedOutputStream(s2.getOutputStream());
+                out1 = new DataOutputStream(s1.getOutputStream());
+//                out2 = new DataOutputStream(s2.getOutputStream());
 
-                // make out same as encrypted file which is the argument FileInputStream
-                // Currently Not sending the full file.. WHY?
-                int bytesRead = 0;
-                byte[] plainText = new byte[8192];
+
                 FileInputStream fis1 = new FileInputStream(f[0]);
-                //FileInputStream fis1 = fis[0];
-                fis1.read(plainText, 0, plainText.length);
-
-                int size = 0, bytes = 0;
-                while((bytesRead = fis1.read(plainText)) >= 0){
-                    out.write(plainText, 0, bytesRead);
-                    System.out.println(bytesRead + " is read");
-                }
-                System.out.println(f[0].length());
+                final byte[] bytearray = new byte[(int) f[0].length()];
+                BufferedInputStream bis = new BufferedInputStream(fis1);
+                bis.read(bytearray, 0, bytearray.length);
+                out.writeObject(bytearray);
                 fis1.close();
                 out.flush();
                 out.close();
                 s.close();
 
-                int bytesRead1 = 0;
-                byte[] plainText1 = new byte[4096];
-                ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
-                //FileInputStream fis2 = fis[1];
-                fis2.read(plainText1, 0, plainText1.length);
+                /*ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
+                final byte[] bytearray1 = new byte[(int) f[1].length()];
+                BufferedInputStream bis1 = new BufferedInputStream(fis2);
+                bis1.read(bytearray1, 0, bytearray1.length);
+                out1.writeObject(bytearray1);
+                fis2.close();
+                out1.flush();
+                out1.close();
+                s1.close();*/
+
+               // THIS WRITES IV
+                out1.writeInt(iv.length);
+                out1.write(iv);
+                out1.flush();
+                out1.close();
+                s1.close();
+
+                // THIS WRITES KEY?
+                out2.writeObject(secretKey);
+                out2.close();
+                s2.close();
+
+                /*ObjectInputStream fis3 = new ObjectInputStream(new FileInputStream(f[2]));
+                final byte[] bytearray2 = new byte[(int) f[2].length()];
+                //BufferedInputStream bis2 = new BufferedInputStream(fis3);
+                fis3.read(bytearray2, 0, bytearray2.length);
+                out2.writeObject(bytearray2);
+                fis3.close();
+                out2.flush();
+                out2.close();
+                s2.close();*/
 
                 /*int size1 = 0, bytes1 = 0;
                 while((bytesRead1 = fis2.read(plainText1)) >= 0){
@@ -373,7 +402,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 System.out.println("IV total size: " + Integer.toString(size1));
                 System.out.println("IV read bytes: " + Integer.toString(bytes1));*/
-                out1.writeObject(fis2.readObject());
+               /* out1.writeObject(fis2.readObject());
                 out1.flush();
                 out1.close();
                 s1.close();
@@ -384,18 +413,16 @@ public class MainActivity extends AppCompatActivity {
                 //FileInputStream fis3 = fis[2];
                 fis3.read(plainText2, 0, plainText2.length);
 
-                /*while((bytesRead2 = fis1.read(plainText2)) >= 0){
+                *//*while((bytesRead2 = fis1.read(plainText2)) >= 0){
                     out2.write(plainText2, 0, bytesRead2);
-                }*/
+                }*//*
                 out2.writeObject(fis3.readObject());
                 out2.flush();
                 out2.close();
-                s2.close();
+                s2.close();*/
             } catch (UnknownHostException e) {
                 e.printStackTrace();
             } catch (IOException e) {
-                e.printStackTrace();
-            } catch (ClassNotFoundException e) {
                 e.printStackTrace();
             }
             return null;
