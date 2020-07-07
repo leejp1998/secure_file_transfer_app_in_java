@@ -75,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "127.0.0.1"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
+    String ipAddress = "192.168.56.101"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
     // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
     int port = 6000;
 
@@ -334,25 +334,22 @@ public class MainActivity extends AppCompatActivity {
 
     class BackgroundTask extends AsyncTask<File,Void,Void>{
         Socket s, s1, s2;
+        Socket s3;
         ObjectOutputStream out;
-//       ObjectOutputStream out1, out2;
-//        BufferedOutputStream out1, out2;
         ObjectOutputStream out2;
         DataOutputStream out1;
-
+        DataOutputStream out3;
         @Override
         protected Void doInBackground(File... f) {
             try{
                 s = new Socket(ipAddress,port);
                 s1 = new Socket(ipAddress,port+1);
                 s2 = new Socket(ipAddress,port+2);
+                s3 = new Socket(ipAddress, port+3);
                 out = new ObjectOutputStream(s.getOutputStream());
-//                out1 = new ObjectOutputStream(s1.getOutputStream());
                 out2 = new ObjectOutputStream(s2.getOutputStream());
-//                out1 = new BufferedOutputStream(s1.getOutputStream());
-//                out2 = new BufferedOutputStream(s2.getOutputStream());
                 out1 = new DataOutputStream(s1.getOutputStream());
-//                out2 = new DataOutputStream(s2.getOutputStream());
+                out3 = new DataOutputStream(s3.getOutputStream());
 
                 // THIS WRITES THE ENCRYPTED FILE AND SEND IT OUT TO SOCKET
                 FileInputStream fis1 = new FileInputStream(f[0]);
@@ -376,6 +373,13 @@ public class MainActivity extends AppCompatActivity {
                 out2.writeObject(secretKey);
                 out2.close();
                 s2.close();
+
+                // THIS WRITES THE FILE NAME WITH EXTENSION
+                String fullfilename = filename + "." + fileExtension;
+                out3.writeUTF(fullfilename);
+                out3.flush();
+                out3.close();
+                s3.close();
 
                 /*ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
                 final byte[] bytearray1 = new byte[(int) f[1].length()];
