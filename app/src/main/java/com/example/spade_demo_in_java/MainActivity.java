@@ -42,7 +42,9 @@ import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.io.Serializable;
 import java.io.Writer;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -69,13 +71,16 @@ public class MainActivity extends AppCompatActivity {
     final int REQUEST_SAF = 1337;
     private Uri tempURI;
     @NotNull
-    private String filename, filepath, fileExtension;
+    private String filename, filepath, fileExtension, fullfilename;
     @NotNull
     private byte[] iv;
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
     private SecretKey secretKey;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "192.168.56.101"; // POC wifi= 172.30.76.58, POC my office LAN = 172.30.0.14   home wifi = 192.168.1.103   ubuntu = 127.0.1.1
+    String ipAddress = "192.168.56.101"; // POC wifi= 172.30.76.58  POC my office LAN = 172.30.0.14  ubuntu = 192.168.56.101
+    // under POC Employee wifi    Lab computer 172.16.0.6
+    // 192.168.56.1, 172.30.76.58, 172.30.76.1, 192.168.1.123 doesnt work
+
     // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
     int port = 6000;
 
@@ -93,6 +98,7 @@ public class MainActivity extends AppCompatActivity {
         Spinner dataTypeDropdown = (Spinner)findViewById(R.id.data_type_spinner);
         Button decryptButton = (Button)findViewById(R.id.decrypt_button);
         Button sendButton = (Button) findViewById(R.id.send_button);
+        Button receiveButton = (Button) findViewById(R.id.receive_button);
         ArrayAdapter arrayAdapter = ArrayAdapter.createFromResource((Context)this, R.array.data_types, android.R.layout.simple_spinner_item);
         arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         dataTypeDropdown.setAdapter((SpinnerAdapter)arrayAdapter);
@@ -146,11 +152,35 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }));
+
+        receiveButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener(){
+            public final void onClick(View it){
+
+                    MainActivity.this.receive();
+
+            }
+        })
+        );
     }
 
-    public void quit(View view){
-        super.finish();
-        System.exit(0);
+    private void receive() {
+        Socket socket;
+        ServerSocket serverSocket;
+        ObjectInputStream ois;
+        FileOutputStream fos;
+        try{
+            serverSocket = new ServerSocket(5000);
+            serverSocket.setSoTimeout(30000);
+            socket = serverSocket.accept();
+            ois = new ObjectInputStream(socket.getInputStream());
+            String filename = ois.readUTF();
+            fos = new FileOutputStream(new File(this.getExternalFilesDir(null),"encrypted_"+filename));
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
     }
 
     private void openDirectory(){
@@ -201,6 +231,7 @@ public class MainActivity extends AppCompatActivity {
             DocumentFile documentFile = DocumentFile.fromSingleUri(this, tempURI);
             String fileNameWithExtension = documentFile.getName();
             int index = fileNameWithExtension.lastIndexOf(".");
+            this.fullfilename = documentFile.getName();
             this.filename = fileNameWithExtension.substring(0,index);
             this.fileExtension = fileNameWithExtension.substring(index+1);
 
@@ -338,7 +369,8 @@ public class MainActivity extends AppCompatActivity {
         ObjectOutputStream out;
         ObjectOutputStream out2;
         DataOutputStream out1;
-        DataOutputStream out3;
+        //DataOutputStream out3;
+        //ObjectOutputStream out3;
         @Override
         protected Void doInBackground(File... f) {
             try{
@@ -349,15 +381,19 @@ public class MainActivity extends AppCompatActivity {
                 out = new ObjectOutputStream(s.getOutputStream());
                 out2 = new ObjectOutputStream(s2.getOutputStream());
                 out1 = new DataOutputStream(s1.getOutputStream());
-                out3 = new DataOutputStream(s3.getOutputStream());
+                //out3 = new DataOutputStream(s3.getOutputStream());
+               // out3 = new ObjectOutputStream(s3.getOutputStream());
 
                 // THIS WRITES THE ENCRYPTED FILE AND SEND IT OUT TO SOCKET
                 FileInputStream fis1 = new FileInputStream(f[0]);
                 final byte[] bytearray = new byte[(int) f[0].length()];
                 BufferedInputStream bis = new BufferedInputStream(fis1);
                 bis.read(bytearray, 0, bytearray.length);
-                out.writeObject(bytearray);
-                fis1.close();
+//                out.writeUTF(fullfilename);
+//                out.writeObject(bytearray);
+                Data data = new Data(fullfilename, secretKey, iv, bytearray);
+                out.writeObject(data);
+//                fis1.close();
                 out.flush();
                 out.close();
                 s.close();
@@ -375,58 +411,10 @@ public class MainActivity extends AppCompatActivity {
                 s2.close();
 
                 // THIS WRITES THE FILE NAME WITH EXTENSION
-                String fullfilename = filename + "." + fileExtension;
-                out3.writeUTF(fullfilename);
+                /*out3.writeUTF(fullfilename);
                 out3.flush();
                 out3.close();
-                s3.close();
-
-                /*ObjectInputStream fis2 = new ObjectInputStream(new FileInputStream(f[1]));
-                final byte[] bytearray1 = new byte[(int) f[1].length()];
-                BufferedInputStream bis1 = new BufferedInputStream(fis2);
-                bis1.read(bytearray1, 0, bytearray1.length);
-                out1.writeObject(bytearray1);
-                fis2.close();
-                out1.flush();
-                out1.close();
-                s1.close();*/
-
-                /*ObjectInputStream fis3 = new ObjectInputStream(new FileInputStream(f[2]));
-                final byte[] bytearray2 = new byte[(int) f[2].length()];
-                //BufferedInputStream bis2 = new BufferedInputStream(fis3);
-                fis3.read(bytearray2, 0, bytearray2.length);
-                out2.writeObject(bytearray2);
-                fis3.close();
-                out2.flush();
-                out2.close();
-                s2.close();*/
-
-                /*int size1 = 0, bytes1 = 0;
-                while((bytesRead1 = fis2.read(plainText1)) >= 0){
-                    out1.write(plainText1, 0, bytesRead1);
-                    bytes1 = bytesRead;
-                    size1 += bytesRead;
-                }
-                System.out.println("IV total size: " + Integer.toString(size1));
-                System.out.println("IV read bytes: " + Integer.toString(bytes1));*/
-               /* out1.writeObject(fis2.readObject());
-                out1.flush();
-                out1.close();
-                s1.close();
-
-                int bytesRead2 = 0;
-                byte[] plainText2 = new byte[4096];
-                ObjectInputStream fis3 = new ObjectInputStream(new FileInputStream(f[2]));
-                //FileInputStream fis3 = fis[2];
-                fis3.read(plainText2, 0, plainText2.length);
-
-                *//*while((bytesRead2 = fis1.read(plainText2)) >= 0){
-                    out2.write(plainText2, 0, bytesRead2);
-                }*//*
-                out2.writeObject(fis3.readObject());
-                out2.flush();
-                out2.close();
-                s2.close();*/
+                s3.close();*/
             } catch (UnknownHostException e) {
                 e.printStackTrace();
             } catch (IOException e) {
