@@ -3,8 +3,6 @@ package com.example.spade_demo_in_java;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.documentfile.provider.DocumentFile;
-import androidx.fragment.app.Fragment;
-import androidx.fragment.app.FragmentActivity;
 
 import android.app.Activity;
 import android.content.ContentResolver;
@@ -13,7 +11,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.util.Log;
+import android.os.Environment;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -27,35 +25,27 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.BufferedWriter;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectInput;
 import java.io.ObjectInputStream;
-import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
-import java.io.PrintWriter;
-import java.io.Serializable;
-import java.io.Writer;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.URI;
+import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.nio.Buffer;
-import java.nio.charset.Charset;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
-import java.security.spec.AlgorithmParameterSpec;
+import java.util.Enumeration;
 
 import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
@@ -63,26 +53,38 @@ import javax.crypto.CipherOutputStream;
 import javax.crypto.KeyGenerator;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
+import javax.crypto.spec.GCMParameterSpec;
+
+import data.Data;
 
 public class MainActivity extends AppCompatActivity {
 
     final int REQUEST_SAF = 1337;
     private Uri tempURI;
     @NotNull
-    private String filename, filepath, fileExtension, fullfilename;
+    private String filename, filename1, filepath, fileExtension, fullfilename;
     @NotNull
-    private byte[] iv;
+    private byte[] iv = new byte[12];
+    private byte[] iv1 = new byte[12];
     private KeyGenerator generator = KeyGenerator.getInstance("AES");
-    private SecretKey secretKey;
+    private SecretKey secretKey, secretKey1;
     private Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-    String ipAddress = "192.168.56.101"; // POC wifi= 172.30.76.58  POC my office LAN = 172.30.0.14  ubuntu = 192.168.56.101
+    String ipAddress = "192.168.1.195"; // POC wifi= 172.30.76.58  POC my office LAN = 172.30.0.14  ubuntu = 192.168.56.101
     // under POC Employee wifi    Lab computer 172.16.0.6
     // 192.168.56.1, 172.30.76.58, 172.30.76.1, 192.168.1.123 doesnt work
+    // Lab setup: "172.16.0.11"
 
     // For ipAddress, debug server java file line 49 InetAddress inet = InetAddress.getLocalHost() and use that value
+    Socket socket;
+    ServerSocket serverSocket;
     int port = 6000;
+    int port1 = 6001;
+    ServerSocketThread serverSocketThread;
+
+    File encrypted_received = null;
+    File decrypted_received = null;
+    File encrypted_send = null;
+    File copy_send = null;
 
     public MainActivity() throws NoSuchAlgorithmException, NoSuchPaddingException {
     }
@@ -93,22 +95,24 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        TextView ipAddressTextView = (TextView) findViewById(R.id.ipAddressTextView);
         Button loadButton = (Button)findViewById(R.id.load_button);
         Button executeButton = (Button)findViewById(R.id.execute_button);
         Spinner dataTypeDropdown = (Spinner)findViewById(R.id.data_type_spinner);
-        Button decryptButton = (Button)findViewById(R.id.decrypt_button);
+        //Button decryptButton = (Button)findViewById(R.id.decrypt_button);
         Button sendButton = (Button) findViewById(R.id.send_button);
         Button receiveButton = (Button) findViewById(R.id.receive_button);
         ArrayAdapter arrayAdapter = ArrayAdapter.createFromResource((Context)this, R.array.data_types, android.R.layout.simple_spinner_item);
         arrayAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         dataTypeDropdown.setAdapter((SpinnerAdapter)arrayAdapter);
 
+        ipAddressTextView.setText(getIpAddress());
+
         loadButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
             public final void onClick(View it) {
                 openDirectory();
             }
         }));
-
         executeButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
             public final void onClick(View it) {
                 try {
@@ -121,11 +125,12 @@ public class MainActivity extends AppCompatActivity {
                     e.printStackTrace();
                 } catch (InvalidKeyException e) {
                     e.printStackTrace();
+                } catch (InvalidAlgorithmParameterException e) {
+                    e.printStackTrace();
                 }
             }
         }));
-
-        decryptButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
+       /* decryptButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
             public final void onClick(View it) {
                 try {
                     MainActivity.this.decrypt();
@@ -141,8 +146,7 @@ public class MainActivity extends AppCompatActivity {
                     e.printStackTrace();
                 }
             }
-        }));
-
+        }));*/
         sendButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener() {
             public final void onClick(View it) {
                 try {
@@ -152,35 +156,222 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }));
-
         receiveButton.setOnClickListener((View.OnClickListener)(new View.OnClickListener(){
             public final void onClick(View it){
-
                     MainActivity.this.receive();
-
             }
         })
         );
     }
 
-    private void receive() {
-        Socket socket;
-        ServerSocket serverSocket;
-        ObjectInputStream ois;
-        FileOutputStream fos;
-        try{
-            serverSocket = new ServerSocket(5000);
-            serverSocket.setSoTimeout(30000);
-            socket = serverSocket.accept();
-            ois = new ObjectInputStream(socket.getInputStream());
-            String filename = ois.readUTF();
-            fos = new FileOutputStream(new File(this.getExternalFilesDir(null),"encrypted_"+filename));
+    private String getIpAddress() {
+        String ip = "";
+        try {
+            Enumeration<NetworkInterface> enumNetworkInterfaces = NetworkInterface.getNetworkInterfaces();
+            while (enumNetworkInterfaces.hasMoreElements()) {
+                NetworkInterface networkInterface = enumNetworkInterfaces.nextElement();
+                Enumeration<InetAddress> enumInetAddress = networkInterface.getInetAddresses();
+                while (enumInetAddress.hasMoreElements()) {
+                    InetAddress inetAddress = enumInetAddress.nextElement();
+                    if (inetAddress.isSiteLocalAddress()) {
+                        ip += "SiteLocalAddress: " + inetAddress.getHostAddress() + "\n";
+                    }
 
-        } catch (IOException e) {
+                }
+
+            }
+        } catch (SocketException e) {
+            // TODO Auto-generated catch block
             e.printStackTrace();
         }
+        return ip;
+    }
+    public class ServerSocketThread extends Thread {
 
+        @Override
+        public void run() {
+            try {
+                serverSocket = new ServerSocket(port1);
+                while (true) {
+                    socket = serverSocket.accept();
+                    FileTxThread fileTxThread = new FileTxThread(socket);
+                    fileTxThread.start();
+                }
+            } catch (IOException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            } finally {
+                if (socket != null) {
+                    try {
+                        socket.close();
+                    } catch (IOException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
 
+    }
+
+    public class FileTxThread extends Thread {
+        Socket s;
+        ObjectInputStream ois;
+        FileOutputStream fos;
+
+        FileTxThread(Socket socket){
+            this.s= socket;
+        }
+
+        @Override
+        public void run() {
+            encrypted_received = new File(getExternalFilesDir(null),"encrypted_" + filename1);
+
+            byte[] bytes = new byte[(int) encrypted_received.length()];
+            try {
+                ois = new ObjectInputStream(socket.getInputStream());
+                fos = new FileOutputStream(encrypted_received);
+                BufferedOutputStream Bos = new BufferedOutputStream(fos);
+                Data data = new Data();
+                data = (Data) ois.readObject();
+                filename1 = data.getFilename();
+                byte[] mybytearray = data.getFile();
+                iv1 = data.getIv();
+                secretKey1 = data.getKey();
+
+                Bos.write(mybytearray);
+                Bos.flush();
+                fos.flush();
+                //s.close();
+
+                FileInputStream fis = new FileInputStream(encrypted_received);
+                decrypted_received = new File(getExternalFilesDir(null), "decrypted_" + filename1);
+                FileOutputStream fos = new FileOutputStream(decrypted_received, false);
+
+                GCMParameterSpec gcmParameterSpec = new GCMParameterSpec(128, iv1, 0, 12);
+                cipher.init(Cipher.DECRYPT_MODE, (Key) secretKey1, gcmParameterSpec);
+                CipherInputStream cis = new CipherInputStream(fis, cipher);
+
+                int byteRead = 0;
+                byte[] plainText = new byte[8192];
+                while((byteRead = cis.read(plainText)) >= 0){
+                    fos.write(plainText, 0, byteRead);
+                }
+                fos.flush();
+                fos.close();
+                cis.close();
+
+                //Remove encrypted file
+                encrypted_received.delete();
+                //Toast.makeText(this, "File is decrypted.", Toast.LENGTH_SHORT).show();
+
+                final String sentMsg = "File received and decrypted from: " + s.getInetAddress();
+                MainActivity.this.runOnUiThread(new Runnable() {
+
+                    @Override
+                    public void run() {
+                        Toast.makeText(MainActivity.this,
+                                sentMsg,
+                                Toast.LENGTH_LONG).show();
+                    }});
+
+            } catch (FileNotFoundException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            } catch (IOException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
+            } catch (InvalidAlgorithmParameterException e) {
+                e.printStackTrace();
+            } catch (InvalidKeyException e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+            }
+
+        }
+    }
+
+    private void receive() {
+        serverSocketThread = new ServerSocketThread();
+        serverSocketThread.start();
+    }
+
+   /* class BackgroundTask1 extends AsyncTask<Void,Void,Void>{
+        ObjectInputStream ois;
+        FileOutputStream fos;
+
+        @Override
+        protected Void doInBackground(Void... voids) {
+            try{
+                if(serverSocket == null){
+                    serverSocket = new ServerSocket(port1);
+                    serverSocket.setSoTimeout(15000);
+                }} catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            try {
+                socket = serverSocket.accept();
+                String ipAddress = socket.getLocalAddress().toString();
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            try{
+                ois = new ObjectInputStream(socket.getInputStream());
+                Data data = new Data();
+                data = (Data) ois.readObject();
+                filename1 = data.getFilename();
+                fos = new FileOutputStream(new File(getExternalFilesDir(null),"encrypted_" + filename1));
+
+                final BufferedOutputStream Bos = new BufferedOutputStream(fos);
+                byte[] mybytearray = data.getFile();
+                Bos.write(mybytearray);
+                Bos.flush();
+
+                iv1 = data.getIv();
+                secretKey1 = data.getKey();
+
+                serverSocket.close();
+                socket.close();
+            } catch (UnknownHostException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+            return null;
+        }
+    }*/
+
+    // decrypt the received file
+    // dont need this anymore
+    private final void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
+        File path = new File(this.getExternalFilesDir(null), "encrypted_" + this.filename1);
+        FileInputStream fis = new FileInputStream(path);
+        File path1 = new File(this.getExternalFilesDir(null), "decrypted_" + this.filename1);
+        FileOutputStream fos = new FileOutputStream(path1, false);
+
+        GCMParameterSpec gcmParameterSpec = new GCMParameterSpec(128, iv1, 0, 12);
+        cipher.init(Cipher.DECRYPT_MODE, (Key) secretKey1, gcmParameterSpec);
+        CipherInputStream cis = new CipherInputStream(fis, cipher);
+
+        int byteRead = 0;
+        byte[] plainText = new byte[8192];
+        while((byteRead = cis.read(plainText)) >= 0){
+            fos.write(plainText, 0, byteRead);
+        }
+        fos.flush();
+        fos.close();
+        cis.close();
+        Toast.makeText(this, "File is decrypted.", Toast.LENGTH_SHORT).show();
     }
 
     private void openDirectory(){
@@ -242,22 +433,19 @@ public class MainActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
     
-    private void execute() throws IOException, NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException {
+    private void execute() throws IOException, NoSuchPaddingException, NoSuchAlgorithmException, InvalidKeyException, InvalidAlgorithmParameterException {
         if(tempURI == null){
             Toast toast = Toast.makeText(getApplicationContext(), "No file is selected", Toast.LENGTH_SHORT);
             //toast.setMargin(50,50);
             toast.show();
         }
         else {
-            File copiedFile = new File(getExternalFilesDir(null), filename + "_copied" + "." + fileExtension);
+            copy_send = new File(getExternalFilesDir(null), filename + "_copied" + "." + fileExtension);
             InputStream inputStream = getContentResolver().openInputStream(tempURI);
-            copyStreamToFile(inputStream, copiedFile);
-            // debugging variables
-        /*Boolean existcheck = copiedFile.exists();
-        Boolean readablecheck = copiedFile.canRead();*/
+            copyStreamToFile(inputStream, copy_send);
 
-            encrypt(copiedFile);
-            copiedFile.delete(); // For security, copied file is deleted. Not sure if this is secure enough.
+            encrypt(copy_send);
+            copy_send.delete(); // For security, copied file is deleted. Not sure if this is secure enough.
         }
     }
 
@@ -291,130 +479,57 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private final void encrypt(File copiedFile) throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException {
+    private final void encrypt(File copiedFile) throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
         ActivityCompat.requestPermissions((Activity)this, new String[]{"android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"}, 200);
-        File path = new File(this.getExternalFilesDir((String)null), this.filename + "_encrypted"+ "." + fileExtension);
+        encrypted_send = new File(this.getExternalFilesDir((String)null), this.filename + "_encrypted"+ "." + fileExtension);
         FileInputStream fis = new FileInputStream(copiedFile);
-        FileOutputStream fos = new FileOutputStream(path, false);
+        FileOutputStream fos = new FileOutputStream(encrypted_send, false);
         this.generator.init(128);
         this.secretKey = this.generator.generateKey();
-        cipher.init(Cipher.ENCRYPT_MODE, (Key) this.secretKey);
+        SecureRandom secureRandom = new SecureRandom();
+        secureRandom.nextBytes(iv);
+        cipher.init(Cipher.ENCRYPT_MODE, (Key) this.secretKey, new GCMParameterSpec(128, iv, 0, 12));
         CipherOutputStream output = new CipherOutputStream((FileOutputStream)fos, this.cipher);
         int bytesRead = 0;
         byte[] plainText = new byte[8192];
 
         while((bytesRead = fis.read(plainText)) >= 0) {
             output.write(plainText, 0, bytesRead);
-            System.out.println(bytesRead + " is read");
         }
-        System.out.println(path.length());
         output.flush();
         output.close();
         fos.close();
         fis.close();
-        this.iv = cipher.getIV();
-
-        //SAVING THE KEY
-        File ivpath = new File(this.getExternalFilesDir(null), this.filename + "_iv.key");
-        FileOutputStream ivfos = new FileOutputStream(ivpath);
-        ObjectOutputStream ivoos = new ObjectOutputStream(ivfos);
-        ivoos.writeObject(iv);
-        File keypath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
-        FileOutputStream keyfos = new FileOutputStream(keypath);
-        ObjectOutputStream keyoos = new ObjectOutputStream(keyfos);
-//        byte[] keyb = secretKey.getEncoded();
-        keyoos.writeObject(secretKey);
-        ivfos.flush();
-        ivfos.close();
-        keyoos.flush();
-        keyoos.close();
-
-        for(int j=0; j<iv.length; j++){
-            System.out.println(iv[j]);
-        }
     }
 
 
-    // Need to be written all over again similar to encrypt, but now decrypting. use the same key and iv.
-    private final void decrypt() throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, InvalidAlgorithmParameterException {
-        File path = new File(this.getExternalFilesDir(null), this.filename + "_encrypted"+ "." + fileExtension);
-        FileInputStream fis = new FileInputStream(path);
-        File path1 = new File(this.getExternalFilesDir(null), this.filename + "_decrypted"+ "." + fileExtension);
-        FileOutputStream fos = new FileOutputStream(path1, false);
-        IvParameterSpec ivParameterSpec = new IvParameterSpec(iv);
-        cipher.init(Cipher.DECRYPT_MODE, (Key) this.secretKey, ivParameterSpec);
-        CipherInputStream cis = new CipherInputStream(fis, cipher);
-        int bytesRead = 0;
-        byte[] plainText = new byte[4096];
 
-        while((bytesRead = cis.read(plainText)) >= 0){
-            fos.write(plainText, 0, bytesRead);
-        }
-        fos.flush();
-        fos.close();
-        cis.close();
-    }
 
     private final void send() throws FileNotFoundException {
-        File path = new File(this.getExternalFilesDir(null), this.filename + "_encrypted"+ "." + fileExtension);
-        File ivPath = new File(this.getExternalFilesDir(null), this.filename + "_iv.key");
-        File keyPath = new File(this.getExternalFilesDir(null), this.filename + "_key.key");
         BackgroundTask b1 = new BackgroundTask();
-        b1.execute(path, ivPath, keyPath);
+        b1.execute(encrypted_send);
     }
 
     class BackgroundTask extends AsyncTask<File,Void,Void>{
-        Socket s, s1, s2;
-        Socket s3;
+        Socket s;
         ObjectOutputStream out;
-        ObjectOutputStream out2;
-        DataOutputStream out1;
-        //DataOutputStream out3;
-        //ObjectOutputStream out3;
+
         @Override
         protected Void doInBackground(File... f) {
             try{
                 s = new Socket(ipAddress,port);
-                s1 = new Socket(ipAddress,port+1);
-                s2 = new Socket(ipAddress,port+2);
-                s3 = new Socket(ipAddress, port+3);
                 out = new ObjectOutputStream(s.getOutputStream());
-                out2 = new ObjectOutputStream(s2.getOutputStream());
-                out1 = new DataOutputStream(s1.getOutputStream());
-                //out3 = new DataOutputStream(s3.getOutputStream());
-               // out3 = new ObjectOutputStream(s3.getOutputStream());
 
                 // THIS WRITES THE ENCRYPTED FILE AND SEND IT OUT TO SOCKET
                 FileInputStream fis1 = new FileInputStream(f[0]);
                 final byte[] bytearray = new byte[(int) f[0].length()];
                 BufferedInputStream bis = new BufferedInputStream(fis1);
                 bis.read(bytearray, 0, bytearray.length);
-//                out.writeUTF(fullfilename);
-//                out.writeObject(bytearray);
                 Data data = new Data(fullfilename, secretKey, iv, bytearray);
                 out.writeObject(data);
-//                fis1.close();
                 out.flush();
                 out.close();
                 s.close();
-
-                // THIS WRITES IV AS BYTE ARRAY
-                out1.writeInt(iv.length);
-                out1.write(iv);
-                out1.flush();
-                out1.close();
-                s1.close();
-
-                // THIS WRITES KEY AS AN OBJECT
-                out2.writeObject(secretKey);
-                out2.close();
-                s2.close();
-
-                // THIS WRITES THE FILE NAME WITH EXTENSION
-                /*out3.writeUTF(fullfilename);
-                out3.flush();
-                out3.close();
-                s3.close();*/
             } catch (UnknownHostException e) {
                 e.printStackTrace();
             } catch (IOException e) {
